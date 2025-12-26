@@ -1,0 +1,65 @@
+server:
+  port: 8080
+
+camel:
+  springboot:
+    main-run-controller: true
+
+api:
+  groups:
+    test:
+      sources:
+        user-from-db:
+          type: db
+          config:
+            url: jdbc:postgresql://localhost:5432/postgres
+            username: postgres
+            password: postgres
+            driver: org.postgresql.Driver
+          path: $
+          query: SELECT * FROM users
+
+    demo:
+      sources:
+        user-full-data:
+          type: rest
+          url: https://dummyjson.com/users/{id}
+          path: $
+
+        user-with-dto:
+          type: rest
+          url: https://dummyjson.com/users/{id}
+          path: $
+          fields:
+            id: $.id
+            firstName: $.firstName
+            lastName: $.lastName
+            age: $.age
+            gender: $.gender
+            mailAddress: $.email
+            phoneNumber: $.phone
+            userName: $.username
+            height: $.height
+            weight: $.weight
+            hairColor: $.hair.color
+            country: $.address.country
+
+        user-company-info:
+          type: rest
+          url: https://dummyjson.com/users/{id}
+          path: $.company
+
+        user-cart:
+          type: rest
+          url: https://dummyjson.com/carts/user/{id}
+          path: $.carts[?(@.total > 1500)]
+          #Test 1500 và 2000
+
+        continents-soap:
+          type: soap
+          url: http://webservices.oorsprong.org/websamples.countryinfo/CountryInfoService.wso
+          path: $.Body.ListOfContinentsByNameResponse.ListOfContinentsByNameResult.tContinent
+          soapAction: ListOfContinentsByName
+
+
+
