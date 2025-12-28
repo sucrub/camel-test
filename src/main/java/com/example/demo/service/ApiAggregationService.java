@@ -5,6 +5,7 @@ import com.example.demo.config.DataSourceFactory;
 import com.example.demo.dto.ApiCallResult;
 import com.example.demo.exception.ApiAggregationException;
 import com.example.demo.template.SoapRequestBodyXml;
+import com.example.demo.util.Util;
 import com.jayway.jsonpath.JsonPath;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.camel.CamelContext;
@@ -14,7 +15,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import javax.sql.DataSource;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,7 +43,8 @@ public class ApiAggregationService {
 
     public Map<String, Object> aggregateApis(String groupName, Map<String, String> pathVariables) {
 
-        ApiConfigRegistry.ApiGroup group = apiConfigRegistry.getGroups().get(groupName);
+        ApiConfigRegistry.ApiGroup group =
+                apiConfigRegistry.getGroups().get(groupName);
 
         if (group == null) {
             throw new IllegalArgumentException("API group not found: " + groupName);
@@ -91,7 +92,7 @@ public class ApiAggregationService {
             ProducerTemplate template
     ) {
         String thread = Thread.currentThread().getName();
-        log.info("CALL API [" + key + "] on thread: " + thread);
+        log.info("CALL API [{}] on thread: {}", key, thread);
 
         try {
             if ("db".equalsIgnoreCase(cfg.getType())) {
@@ -113,46 +114,26 @@ public class ApiAggregationService {
             ProducerTemplate template,
             String thread
     ) throws Exception {
-        DataSource dataSource = dataSourceFactory.getDataSource(cfg.getConfig());
 
-        // Register datasource in Camel registry
+        DataSource dataSource = dataSourceFactory.getDataSource(cfg.getConfig());
         camelContext.getRegistry().bind("dataSource", dataSource);
 
-        // Replace path variables in query if any
-        String query = cfg.getQuery();
-        for (Map.Entry<String, String> entry : pathVariables.entrySet()) {
-            query = query.replace("{" + entry.getKey() + "}", entry.getValue());
-        }
-
-        String finalQuery = query;
+        String finalQuery = Util.resolveTemplate(cfg.getQuery(), pathVariables);
         String dbUrl = cfg.getConfig().getUrl();
 
-        Exchange response = template.request("direct:callDb", ex -> {
-            ex.getIn().setHeader("query", finalQuery);
-        });
+        Exchange response = template.request("direct:callDb", ex ->
+                ex.getIn().setHeader("query", finalQuery)
+        );
 
         String body = response.getMessage().getBody(String.class);
 
-        log.info("DONE DB QUERY [" + key + "] on thread: " + thread);
+        log.info("DONE DB QUERY [{}] on thread: {}", key, thread);
 
         if (body == null || body.isBlank()) {
-            throw new RuntimeException(
-                    "Empty response from database: " + dbUrl
-            );
+            throw new RuntimeException("Empty response from database: " + dbUrl);
         }
 
-        Object root = JsonPath.read(body, cfg.getPath());
-        Object value;
-
-        if (cfg.getFields() == null || cfg.getFields().isEmpty()) {
-            value = root;
-        } else {
-            Map<String, Object> extracted = new LinkedHashMap<>();
-            cfg.getFields().forEach((field, path) ->
-                    extracted.put(field, JsonPath.read(root, path))
-            );
-            value = extracted;
-        }
+        Object value = Util.extractByJsonPath(body, cfg);
 
         return new ApiCallResult(key, dbUrl, value, null);
     }
@@ -164,47 +145,22 @@ public class ApiAggregationService {
             ProducerTemplate template,
             String thread
     ) throws Exception {
-        String url = cfg.getUrl();
-        for (Map.Entry<String, String> entry : pathVariables.entrySet()) {
-            url = url.replace("{" + entry.getKey() + "}", entry.getValue());
-        }
 
-        String finalUrl = url;
-        Exchange response = template.request("direct:callApi", ex -> {
-            ex.getIn().setHeader("url", finalUrl);
-        });
+        String finalUrl = Util.resolveTemplate(cfg.getUrl(), pathVariables);
+
+        Exchange response = template.request("direct:callApi", ex ->
+                ex.getIn().setHeader("url", finalUrl)
+        );
 
         Integer status = response.getMessage()
                 .getHeader(Exchange.HTTP_RESPONSE_CODE, Integer.class);
-
         String body = response.getMessage().getBody(String.class);
 
-        log.info("DONE API [" + key + "] on thread: " + thread);
+        log.info("DONE API [{}] on thread: {}", key, thread);
 
-        if (status == null || status >= 400) {
-            throw new RuntimeException(
-                    "HTTP " + status + " when calling " + finalUrl
-            );
-        }
+        Util.validateHttpResponse(status, body, finalUrl);
 
-        if (body == null || body.isBlank()) {
-            throw new RuntimeException(
-                    "Empty response body from " + finalUrl
-            );
-        }
-
-        Object root = JsonPath.read(body, cfg.getPath());
-        Object value;
-
-        if (cfg.getFields() == null || cfg.getFields().isEmpty()) {
-            value = root;
-        } else {
-            Map<String, Object> extracted = new LinkedHashMap<>();
-            cfg.getFields().forEach((field, path) ->
-                    extracted.put(field, JsonPath.read(root, path))
-            );
-            value = extracted;
-        }
+        Object value = Util.extractByJsonPath(body, cfg);
 
         return new ApiCallResult(key, finalUrl, value, null);
     }
@@ -216,12 +172,9 @@ public class ApiAggregationService {
             ProducerTemplate template,
             String thread
     ) throws Exception {
-        String url = cfg.getUrl();
-        for (Map.Entry<String, String> entry : pathVariables.entrySet()) {
-            url = url.replace("{" + entry.getKey() + "}", entry.getValue());
-        }
 
-        String finalUrl = url;
+        String finalUrl = Util.resolveTemplate(cfg.getUrl(), pathVariables);
+
         Exchange response = template.request("direct:callApiSoap", ex -> {
             ex.getIn().setHeader("url", finalUrl);
             ex.getIn().setBody(SoapRequestBodyXml.map.get(cfg.getSoapAction()));
@@ -229,35 +182,13 @@ public class ApiAggregationService {
 
         Integer status = response.getMessage()
                 .getHeader(Exchange.HTTP_RESPONSE_CODE, Integer.class);
-
         String body = response.getMessage().getBody(String.class);
 
-        log.info("DONE API [" + key + "] on thread: " + thread);
+        log.info("DONE API [{}] on thread: {}", key, thread);
 
-        if (status == null || status >= 400) {
-            throw new RuntimeException(
-                    "HTTP " + status + " when calling " + finalUrl
-            );
-        }
+        Util.validateHttpResponse(status, body, finalUrl);
 
-        if (body == null || body.isBlank()) {
-            throw new RuntimeException(
-                    "Empty response body from " + finalUrl
-            );
-        }
-
-        Object root = JsonPath.read(body, cfg.getPath());
-        Object value;
-
-        if (cfg.getFields() == null || cfg.getFields().isEmpty()) {
-            value = root;
-        } else {
-            Map<String, Object> extracted = new LinkedHashMap<>();
-            cfg.getFields().forEach((field, path) ->
-                    extracted.put(field, JsonPath.read(root, path))
-            );
-            value = extracted;
-        }
+        Object value = Util.extractByJsonPath(body, cfg);
 
         return new ApiCallResult(key, finalUrl, value, null);
     }

@@ -15,7 +15,7 @@ api:
             url: jdbc:postgresql://localhost:5432/postgres
             username: postgres
             password: postgres
-            driver: org.postgresql.Driver
+            driver: org.postgresql.Driver #Should change this into db only, then we can mapping driver later
           path: $
           query: SELECT * FROM users
 
