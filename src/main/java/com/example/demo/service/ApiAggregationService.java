@@ -116,14 +116,16 @@ public class ApiAggregationService {
     ) throws Exception {
 
         DataSource dataSource = dataSourceFactory.getDataSource(cfg.getConfig());
-        camelContext.getRegistry().bind("dataSource", dataSource);
+        String dsName = "ds-" + key;
+        camelContext.getRegistry().bind(dsName, dataSource);
 
         String finalQuery = Util.resolveTemplate(cfg.getQuery(), pathVariables);
         String dbUrl = cfg.getConfig().getUrl();
 
-        Exchange response = template.request("direct:callDb", ex ->
-                ex.getIn().setHeader("query", finalQuery)
-        );
+        Exchange response = template.request("direct:callDb", ex -> {
+            ex.getIn().setHeader("query", finalQuery);
+            ex.getIn().setHeader("dsName", dsName);
+        });
 
         String body = response.getMessage().getBody(String.class);
 

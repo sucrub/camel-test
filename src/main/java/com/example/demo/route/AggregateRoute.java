@@ -156,7 +156,7 @@ public class AggregateRoute extends RouteBuilder {
                 .logRetryAttempted(true)
                 .handled(false)
                 .end()
-                .toD("sql:${header.query}?dataSource=#dataSource&outputType=SelectList")
+                .toD("sql:${header.query}?dataSource=#${header.dsName}&outputType=SelectList")
                 .marshal().json()
                 .convertBodyTo(String.class);
     }

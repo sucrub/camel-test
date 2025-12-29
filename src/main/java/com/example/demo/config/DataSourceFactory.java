@@ -13,6 +13,17 @@ public class DataSourceFactory {
 
     private final Map<String, DataSource> dataSourceCache = new ConcurrentHashMap<>();
 
+    private static final Map<String, String> DATABASE_DRIVER = Map.of(
+            "postgres", "org.postgresql.Driver",
+            "oracle", "oracle.jdbc.OracleDriver",
+            "mysql", "com.mysql.cj.jdbc.Driver",
+            "mariadb", "org.mariadb.jdbc.Driver",
+            "sqlserver", "com.microsoft.sqlserver.jdbc.SQLServerDriver",
+            "h2", "org.h2.Driver",
+            "sqlite", "org.sqlite.JDBC",
+            "db2", "com.ibm.db2.jcc.DB2Driver"
+    );
+
     /**
      * Get or create a DataSource from DbConfig
      * Uses connection string as cache key to reuse datasources with same config
@@ -35,7 +46,7 @@ public class DataSourceFactory {
         hikariConfig.setJdbcUrl(config.getUrl());
         hikariConfig.setUsername(config.getUsername());
         hikariConfig.setPassword(config.getPassword());
-        hikariConfig.setDriverClassName(config.getDriver());
+        hikariConfig.setDriverClassName(DATABASE_DRIVER.get(config.getDatabase()));
 
         // Configure pool settings
         hikariConfig.setMaximumPoolSize(10);
